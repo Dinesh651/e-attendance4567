@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { auth, googleProvider, findUserByEmailInDB } from '../services/firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { User } from '../types';
 
 interface AuthContextType {
@@ -21,6 +21,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // This listener is the single source of truth for the user's auth state.
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       try {
         if (firebaseUser && firebaseUser.email) {
@@ -43,6 +44,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     });
 
+    // Process the result of a redirect sign-in.
+    // This will trigger the onAuthStateChanged listener above if successful.
+    getRedirectResult(auth).catch((err) => {
+      console.error("Error processing redirect result:", err);
+      setError("An error occurred during sign-in. Please try again.");
+      setIsInitializing(false); // Don't get stuck on loading screen
+    });
+
     return () => unsubscribe();
   }, []);
 
@@ -50,23 +59,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
     setError(null);
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const firebaseUser = result.user;
-      if (firebaseUser && firebaseUser.email) {
-        const appUser = await findUserByEmailInDB(firebaseUser.email);
-        if (appUser) {
-          setUser(appUser);
-        } else {
-          setError("Your account is not authorized to access this application.");
-          await signOut(auth);
-        }
-      } else {
-          setError("Could not retrieve user information from Google.");
-      }
+      // This navigates the user to the Google sign-in page.
+      await signInWithRedirect(auth, googleProvider);
     } catch (err) {
-      setError("Failed to sign in. Please try again.");
+      setError("Failed to start sign in. Please try again.");
       console.error(err);
-    } finally {
       setIsLoading(false);
     }
   };

@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getDatabase, ref, get, query, orderByChild, equalTo, set, push, remove, child } from "firebase/database";
+import { getDatabase, ref, get, set, push, remove, child } from "firebase/database";
 import { User, Role } from "../types";
 
 
@@ -27,24 +27,26 @@ export const findUserByEmailInDB = async (email: string): Promise<User | null> =
   const dbRef = ref(db);
   const normalizedEmail = email.toLowerCase();
 
-  // Check admins
-  const adminQuery = query(child(dbRef, 'admins'), orderByChild('email'), equalTo(normalizedEmail));
-  const adminSnapshot = await get(adminQuery);
-  if (adminSnapshot.exists()) {
-      const adminData = adminSnapshot.val();
-      const adminId = Object.keys(adminData)[0];
-      const adminUser = adminData[adminId];
+  // Check admins by fetching all and filtering client-side
+  const adminsSnapshot = await get(child(dbRef, 'admins'));
+  if (adminsSnapshot.exists()) {
+    const adminsData = adminsSnapshot.val();
+    const adminId = Object.keys(adminsData).find(key => adminsData[key].email.toLowerCase() === normalizedEmail);
+    if (adminId) {
+      const adminUser = adminsData[adminId];
       return { id: adminId, name: adminUser.name, email: adminUser.email, role: Role.ADMIN };
+    }
   }
 
-  // Check employees
-  const employeeQuery = query(child(dbRef, 'employees'), orderByChild('email'), equalTo(normalizedEmail));
-  const employeeSnapshot = await get(employeeQuery);
-  if (employeeSnapshot.exists()) {
-      const employeeData = employeeSnapshot.val();
-      const employeeId = Object.keys(employeeData)[0];
-      const employeeUser = employeeData[employeeId];
+  // Check employees by fetching all and filtering client-side
+  const employeesSnapshot = await get(child(dbRef, 'employees'));
+  if (employeesSnapshot.exists()) {
+    const employeesData = employeesSnapshot.val();
+    const employeeId = Object.keys(employeesData).find(key => employeesData[key].email.toLowerCase() === normalizedEmail);
+    if (employeeId) {
+      const employeeUser = employeesData[employeeId];
       return { id: employeeId, name: employeeUser.name, email: employeeUser.email, role: Role.EMPLOYEE };
+    }
   }
 
   return null;

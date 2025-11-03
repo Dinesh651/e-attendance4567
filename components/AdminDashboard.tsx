@@ -1,174 +1,252 @@
-
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/mockApi';
-import { AttendanceRecord, Notice } from '../types';
+import { getEmployeesFromDB, addEmployeeToDB, removeEmployeeFromDB } from '../services/firebase';
+import { User, Client, AttendanceRecord, Notice } from '../types';
 import { Spinner } from './icons';
 
-const AttendanceTable: React.FC = () => {
-    const [records, setRecords] = useState<AttendanceRecord[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+// A simple card component for dashboard sections
+const DashboardCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+    <div className="bg-white p-6 rounded-lg shadow-md">
+        <h2 className="text-xl font-bold text-gray-800 mb-4">{title}</h2>
+        {children}
+    </div>
+);
 
-    useEffect(() => {
-        const fetchRecords = async () => {
+const UserManagement: React.FC<{ initialUsers: User[] }> = ({ initialUsers }) => {
+    const [users, setUsers] = useState<User[]>(initialUsers);
+    const [newName, setNewName] = useState('');
+    const [newEmail, setNewEmail] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleAddUser = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newName || !newEmail) {
+            setError('Name and email are required.');
+            return;
+        }
+        setError('');
+        setIsSubmitting(true);
+        try {
+            const newUser = await addEmployeeToDB(newName, newEmail);
+            setUsers(prev => [...prev, newUser]);
+            setNewName('');
+            setNewEmail('');
+        } catch (err) {
+            setError('Failed to add employee.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleRemoveUser = async (userId: string) => {
+        if(window.confirm('Are you sure you want to remove this employee?')) {
             try {
-                const data = await api.getAttendanceRecords();
-                setRecords(data);
-            } catch (error) {
-                console.error("Failed to fetch attendance records", error);
-            } finally {
-                setIsLoading(false);
+                await removeEmployeeFromDB(userId);
+                setUsers(prev => prev.filter(u => u.id !== userId));
+            } catch (err) {
+                setError('Failed to remove employee.');
             }
-        };
-        fetchRecords();
-    }, []);
-
-    if (isLoading) {
-        return <div className="flex justify-center items-center p-8"><Spinner className="w-8 h-8 text-blue-600" /></div>;
-    }
+        }
+    };
 
     return (
-        <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check In</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check Out</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                    </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                    {records.map(record => (
-                        <tr key={record.id}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.userName}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.clientName}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.checkInTime.toLocaleString()}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.checkOutTime ? record.checkOutTime.toLocaleString() : <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Active</span>}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-500 hover:text-blue-700">
-                                {record.location ? <a href={`https://www.google.com/maps?q=${record.location.lat},${record.location.lng}`} target="_blank" rel="noopener noreferrer">View Map</a> : 'N/A'}
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+        <div className="space-y-4">
+            <ul className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                {users.map(user => (
+                    <li key={user.id} className="p-3 bg-gray-50 rounded-md flex justify-between items-center">
+                        <div>
+                            <p className="font-semibold text-gray-900">{user.name}</p>
+                            <p className="text-sm text-gray-500">{user.email}</p>
+                        </div>
+                        <button 
+                            onClick={() => handleRemoveUser(user.id)}
+                            className="text-red-500 hover:text-red-700 font-semibold text-sm"
+                        >
+                            Remove
+                        </button>
+                    </li>
+                ))}
+            </ul>
+            <form onSubmit={handleAddUser} className="space-y-3 border-t pt-4">
+                <h3 className="text-md font-semibold text-gray-700">Add New Employee</h3>
+                 {error && <p className="text-red-500 text-sm">{error}</p>}
+                <input 
+                    type="text" 
+                    placeholder="Name" 
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+                <input 
+                    type="email" 
+                    placeholder="Email" 
+                    value={newEmail}
+                    onChange={e => setNewEmail(e.target.value)}
+                     className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                />
+                 <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-green-300 flex items-center justify-center transition-colors"
+                >
+                    {isSubmitting && <Spinner className="w-5 h-5 mr-2" />}
+                    Add Employee
+                </button>
+            </form>
         </div>
     );
 };
 
-const NoticeManagement: React.FC = () => {
-    const [notices, setNotices] = useState<Notice[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+
+// Component to display attendance records
+const AttendanceLog: React.FC<{ records: AttendanceRecord[] }> = ({ records }) => (
+    <div className="max-h-96 overflow-y-auto pr-2">
+        <table className="w-full text-sm text-left text-gray-500">
+            <thead className="text-xs text-gray-700 uppercase bg-gray-50 sticky top-0">
+                <tr>
+                    <th scope="col" className="py-3 px-6">Employee</th>
+                    <th scope="col" className="py-3 px-6">Client</th>
+                    <th scope="col" className="py-3 px-6">Check In</th>
+                    <th scope="col" className="py-3 px-6">Check Out</th>
+                </tr>
+            </thead>
+            <tbody>
+                {records.map(record => (
+                    <tr key={record.id} className="bg-white border-b hover:bg-gray-50">
+                        <td className="py-4 px-6 font-medium text-gray-900">{record.userName}</td>
+                        <td className="py-4 px-6">{record.clientName}</td>
+                        <td className="py-4 px-6">{record.checkInTime.toLocaleString()}</td>
+                        <td className="py-4 px-6">{record.checkOutTime?.toLocaleString() || 'N/A'}</td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
+);
+
+// Form to add a new notice
+const NoticeForm: React.FC<{ onNoticeAdded: (notice: Notice) => void }> = ({ onNoticeAdded }) => {
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const fetchNotices = async () => {
-        setIsLoading(true);
-        try {
-            const data = await api.getNotices();
-            setNotices(data);
-        } catch (error) {
-            console.error("Failed to fetch notices", error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    
-    useEffect(() => {
-        fetchNotices();
-    }, []);
+    const [error, setError] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if(!title || !content) return;
-
+        if (!title || !content) {
+            setError('Title and content are required.');
+            return;
+        }
+        setError('');
         setIsSubmitting(true);
         try {
-            await api.addNotice(title, content);
+            const newNotice = await api.addNotice(title, content);
+            onNoticeAdded(newNotice);
             setTitle('');
             setContent('');
-            await fetchNotices(); // Refresh notices
-        } catch (error) {
-            console.error("Failed to add notice", error);
+        } catch (err) {
+            setError('Failed to add notice.');
         } finally {
             setIsSubmitting(false);
         }
     };
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="md:col-span-1">
-                <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">Post New Notice</h3>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label htmlFor="notice-title" className="block text-sm font-medium text-gray-700">Title</label>
-                        <input type="text" id="notice-title" value={title} onChange={e => setTitle(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required />
-                    </div>
-                    <div>
-                        <label htmlFor="notice-content" className="block text-sm font-medium text-gray-700">Content</label>
-                        <textarea id="notice-content" value={content} onChange={e => setContent(e.target.value)} rows={4} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required></textarea>
-                    </div>
-                    <button type="submit" disabled={isSubmitting} className="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300">
-                        {isSubmitting && <Spinner className="w-5 h-5 mr-2" />}
-                        Post Notice
-                    </button>
-                </form>
+        <form onSubmit={handleSubmit} className="space-y-4">
+             {error && <p className="text-red-500 text-sm">{error}</p>}
+            <div>
+                <label htmlFor="notice-title" className="block text-sm font-medium text-gray-700">Title</label>
+                <input
+                    type="text"
+                    id="notice-title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    disabled={isSubmitting}
+                />
             </div>
-            <div className="md:col-span-2">
-                 <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">Posted Notices</h3>
-                 {isLoading ? <div className="flex justify-center items-center p-8"><Spinner className="w-8 h-8 text-blue-600" /></div> : (
-                     <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                        {notices.map(notice => (
-                            <div key={notice.id} className="p-4 border rounded-md">
-                                <h4 className="font-semibold">{notice.title}</h4>
-                                <p className="text-sm text-gray-600 mt-1">{notice.content}</p>
-                                <p className="text-xs text-gray-400 mt-2 text-right">{notice.createdAt.toLocaleDateString()}</p>
-                            </div>
-                        ))}
-                     </div>
-                 )}
+            <div>
+                <label htmlFor="notice-content" className="block text-sm font-medium text-gray-700">Content</label>
+                <textarea
+                    id="notice-content"
+                    rows={3}
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    disabled={isSubmitting}
+                />
             </div>
-        </div>
+            <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300 flex items-center justify-center transition-colors"
+            >
+                {isSubmitting && <Spinner className="w-5 h-5 mr-2" />}
+                Post Notice
+            </button>
+        </form>
     );
 };
 
-type Tab = 'attendance' | 'notices';
-
 const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>('attendance');
+    const [data, setData] = useState<{
+        users: User[];
+        records: AttendanceRecord[];
+        notices: Notice[];
+    } | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  const tabs: { id: Tab, name: string }[] = [
-      { id: 'attendance', name: 'Attendance & Client Data' },
-      { id: 'notices', name: 'Manage Notices' }
-  ];
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                // Fetch users from Firebase DB, other data from mock API
+                const [users, records, notices] = await Promise.all([
+                    getEmployeesFromDB(),
+                    api.getAttendanceRecords(),
+                    api.getNotices()
+                ]);
+                setData({ users, records, notices });
+            } catch (err) {
+                setError("Failed to fetch dashboard data.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
 
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-md">
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-            {tabs.map(tab => (
-                 <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`${
-                        activeTab === tab.id
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm focus:outline-none`}
-                 >
-                    {tab.name}
-                 </button>
-            ))}
-        </nav>
-      </div>
-      
-      <div>
-        {activeTab === 'attendance' && <AttendanceTable />}
-        {activeTab === 'notices' && <NoticeManagement />}
-      </div>
-    </div>
-  );
+        fetchData();
+    }, []);
+    
+    const handleNoticeAdded = (newNotice: Notice) => {
+        setData(prevData => prevData ? { ...prevData, notices: [newNotice, ...prevData.notices] } : null);
+    };
+
+    if (isLoading) {
+        return <div className="flex justify-center items-center p-8"><Spinner className="w-12 h-12 text-blue-600" /></div>;
+    }
+
+    if (error || !data) {
+        return <div className="text-center text-red-500 bg-red-100 p-4 rounded-md">{error || "No data available."}</div>;
+    }
+
+    return (
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-8">
+                <DashboardCard title="Full Attendance Log">
+                    <AttendanceLog records={data.records} />
+                </DashboardCard>
+            </div>
+            <div className="lg:col-span-1 space-y-8">
+                <DashboardCard title="Manage Employees">
+                   <UserManagement initialUsers={data.users} />
+                </DashboardCard>
+                 <DashboardCard title="Post a New Notice">
+                    <NoticeForm onNoticeAdded={handleNoticeAdded} />
+                </DashboardCard>
+            </div>
+        </div>
+    );
 };
 
 export default AdminDashboard;

@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { getFirebaseAuth, googleProvider, signInWithPopup, signOut } from '../services/firebase';
-import { api } from '../services/mockApi';
+import { auth, googleProvider, findUserByEmailInDB } from '../services/firebase';
+import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { User } from '../types';
 
 interface AuthContextType {
@@ -22,67 +21,63 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const auth = getFirebaseAuth();
-      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-        try {
-          if (firebaseUser && firebaseUser.email) {
-              const appUser = await api.findUserByEmail(firebaseUser.email);
-              if (appUser) {
-                  setUser(appUser);
-              } else {
-                  setUser(null);
-                  setError("Your account is not authorized to access this application.");
-                  await signOut(auth);
-              }
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      try {
+        if (firebaseUser && firebaseUser.email) {
+          const appUser = await findUserByEmailInDB(firebaseUser.email);
+          if (appUser) {
+            setUser(appUser);
           } else {
+            setError("Your account is not authorized to access this application.");
             setUser(null);
+            await signOut(auth);
           }
-        } catch (e) {
-          setError("An error occurred during authentication.");
+        } else {
           setUser(null);
-        } finally {
-          setIsInitializing(false);
         }
-      });
-
-      return () => unsubscribe();
-    } catch (e: any) {
-        setError(e.message);
+      } catch (e) {
+        setError("An error occurred during authentication state check.");
+        setUser(null);
+      } finally {
         setIsInitializing(false);
-    }
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const login = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const auth = getFirebaseAuth();
-      await signInWithPopup(auth, googleProvider);
-      // The onAuthStateChanged listener will handle setting the user
-    } catch (e: any) {
-        console.error(e);
-        if (e.code === 'auth/popup-closed-by-user') {
-            setError('Sign-in process was cancelled.');
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
+      if (firebaseUser && firebaseUser.email) {
+        const appUser = await findUserByEmailInDB(firebaseUser.email);
+        if (appUser) {
+          setUser(appUser);
         } else {
-            setError('Failed to sign in with Google. Please try again.');
+          setError("Your account is not authorized to access this application.");
+          await signOut(auth);
         }
+      } else {
+          setError("Could not retrieve user information from Google.");
+      }
+    } catch (err) {
+      setError("Failed to sign in. Please try again.");
+      console.error(err);
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = async () => {
-    setIsLoading(true);
-    setError(null);
     try {
-      const auth = getFirebaseAuth();
       await signOut(auth);
       setUser(null);
-    } catch (e) {
-      setError('Failed to sign out.');
-    } finally {
-      setIsLoading(false);
+    } catch (err) {
+      setError("Failed to sign out.");
+      console.error(err);
     }
   };
 

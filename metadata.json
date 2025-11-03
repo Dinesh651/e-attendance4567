@@ -1,0 +1,7 @@
+{
+  "name": "Audit Firm E-Attendance",
+  "description": "An electronic attendance system for audit firm employees, featuring geolocation tracking, client selection for check-ins, and an admin panel for monitoring and posting notices.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
